@@ -1,0 +1,139 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches:
+      - dev
+      - test
+      - homolog
+      - master
+
+  pull_request:
+    branches:
+      - dev
+      - test
+      - homolog
+      - master
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version:
+          - 12.x
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Runs a set of commands using the runners shell
+      - name: deploy
+        shell: bash
+        run: |
+
+          declare -a PATHS_TO_DEPLOY
+          function print_message {
+
+            echo "==============================================================="
+            echo $1
+            echo "==============================================================="
+          }
+
+          function aws_deploy {
+            npm i
+
+            print_message "Make Deploy -- SERVERLESS"
+            npm run deploy:${GITHUB_REF##*/}
+          }
+
+          function get_paths_deploy {
+
+            print_message "Get Paths to deploy - Start"
+
+            if [ $GITHUB_BASE_REF ]; then
+              # Pull Request
+              git fetch origin $GITHUB_BASE_REF --depth=1
+              ALL_CHANGED_FILE=$( git diff --name-only origin/$GITHUB_BASE_REF $GITHUB_SHA )
+            else
+              # Push
+              git fetch origin ${{ github.event.before }} --depth=1
+              ALL_CHANGED_FILE=$( git diff --name-only ${{ github.event.before }} $GITHUB_SHA )
+            fi
+
+            declare -a arrayToDeploy # declarando o array que vai manter todos os diretórios que necessitam de deploy
+            for i in ${ALL_CHANGED_FILE}; do #para cada arquivo
+                FILEPATH=$( dirname "$i" ) #consigo o path do diretório
+                while [[ ${FILEPATH} != "." ]]; do #verifico os diretórios anteriores enquanto forem diferentes da raiz
+                    if [ -f ${FILEPATH}/serverless.yml ]; then # verificando se existe o arquivo de configuração do serverless nesse diretório
+                        arrayToDeploy+=(${FILEPATH}) #adiciona o path a ser realizado o deploy ao array
+                        break
+                    fi
+                    FILEPATH=$( dirname "${FILEPATH}" ) #consigo o path anterior
+                done
+            done
+
+            arrayToDeploy=($(echo "${arrayToDeploy[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ')) #removendo paths duplicados
+
+            PATHS_TO_DEPLOY=${arrayToDeploy[@]}
+            print_message "Get Paths to deploy - Finished"
+          }
+
+          function execute_deploy {
+
+            get_paths_deploy
+
+            print_message "Prepare Deploy"
+            PWD_ORIGIN=$( pwd ) #conseguindo o path original
+
+            for i in ${PATHS_TO_DEPLOY[@]}; do #para cada path realizar o deploy
+
+              cd ${PWD_ORIGIN}/${i}
+
+              print_message "Prepare to AWS deploy"
+              LANGUAGE=$( sed -n '/runtime/p' serverless.yml ) #conseguindo a linguagem utilizada
+              LANGUAGE=${LANGUAGE/runtime:/}
+              STEPFUNCTIONS=$( sed -n '/stateMachines/p' serverless.yml )
+              RESOURCES=$( sed -n '/Resources/p' serverless.yml )
+
+              if [[ ${LANGUAGE} == *"nodejs"* ]] || [[ ${STEPFUNCTIONS} == *"stateMachines"* ]] || [[ ${RESOURCES} == *"Resources"* ]]; then
+                aws_deploy
+                rm -rf node_modules
+              else
+                print_message "Favor verificar qual linguagem esta sendo utilizada"
+              fi
+            done
+          }
+
+          function deploy() {
+            print_message "Deploy - Start"
+            execute_deploy
+            print_message "Deploy - Finished"
+          }
+
+          deploy

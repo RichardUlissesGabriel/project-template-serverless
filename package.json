@@ -1,0 +1,51 @@
+{
+  "name": "project-template-serverless",
+  "version": "1.0.0",
+  "description": "Project to use as template to new projects",
+  "scripts": {
+    "create-service": "./scripts/create-service.sh",
+    "update-version": "./scripts/update-version.sh",
+    "update-git-version": "./scripts/update-git-version.sh",
+    "init-project": "./scripts/init-project.sh",
+    "change-log": "auto-changelog -p",
+    "test": "jest",
+    "eslint": "eslint ."
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS",
+      "prepare-commit-msg": "exec < /dev/tty && git cz --hook || true",
+      "pre-commit": "npm run update-version package && rm -rf CHANGELOG.md && auto-changelog -p && git add CHANGELOG.md package.json package-lock.json && lint-staged",
+      "post-commit": "npm run update-version tag && git push --tags"
+    }
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "jest --bail --findRelatedTests",
+      "git add"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^9.0.1",
+    "@commitlint/config-conventional": "^9.0.1",
+    "auto-changelog": "^2.2.0",
+    "commitizen": "^4.1.2",
+    "cz-conventional-changelog": "^3.2.0",
+    "eslint": "^7.3.1",
+    "eslint-config-standard": "^14.1.1",
+    "eslint-plugin-absolute-import": "^1.4.4",
+    "eslint-plugin-import": "^2.22.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.1",
+    "husky": "^4.2.5",
+    "jest": "^26.1.0",
+    "lint-staged": "^10.2.11"
+  }
+}
